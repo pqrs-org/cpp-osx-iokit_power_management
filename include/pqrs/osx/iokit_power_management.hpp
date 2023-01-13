@@ -13,6 +13,19 @@
 namespace pqrs {
 namespace osx {
 namespace iokit_power_management {
+
+inline iokit_return sleep(void) {
+  auto port = IOPMFindPowerManagement(MACH_PORT_NULL);
+  if (port != IO_OBJECT_NULL) {
+    iokit_return r = IOPMSleepSystem(port);
+    IOServiceClose(port);
+
+    return r;
+  }
+
+  return kIOReturnError;
+}
+
 } // namespace iokit_power_management
 } // namespace osx
 } // namespace pqrs

@@ -14,6 +14,13 @@ int main(void) {
   auto dispatcher = std::make_shared<pqrs::dispatcher::dispatcher>(time_source);
   auto run_loop_thread = std::make_shared<pqrs::cf::run_loop_thread>();
 
+#if 0
+  {
+    auto r = pqrs::osx::iokit_power_management::sleep();
+    std::cout << "sleep " << r.to_string() << std::endl;
+  }
+#endif
+
   auto monitor = std::make_unique<pqrs::osx::iokit_power_management::monitor>(dispatcher,
                                                                               run_loop_thread);
 
