@@ -115,7 +115,7 @@ private:
   void stop(void) {
     if (notifier_) {
       iokit_return r = IODeregisterForSystemPower(&notifier_);
-      if (r) {
+      if (!r) {
         enqueue_to_dispatcher([this, r] {
           error_occurred(std::string("IODeregisterForSystemPower is failed: ") + r.to_string());
         });
@@ -126,7 +126,7 @@ private:
 
     if (kernel_port_) {
       kern_return r = IOServiceClose(kernel_port_);
-      if (r) {
+      if (!r) {
         enqueue_to_dispatcher([this, r] {
           error_occurred(std::string("IOServiceClose is failed: ") + r.to_string());
         });
