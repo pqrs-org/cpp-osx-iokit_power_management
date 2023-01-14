@@ -29,7 +29,7 @@ int main(void) {
                                         auto&& wait) {
     std::cout << "system_will_sleep" << std::endl;
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    // std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 
     IOAllowPowerChange(kernel_port, notification_id);
 
@@ -49,7 +49,9 @@ int main(void) {
                                        auto&& wait) {
     std::cout << "can_system_sleep" << std::endl;
 
-    IOCancelPowerChange(kernel_port, notification_id);
+    IOAllowPowerChange(kernel_port, notification_id);
+    // IOCancelPowerChange(kernel_port, notification_id);
+
     wait->notify();
   });
 
