@@ -149,8 +149,6 @@ private:
                 void* _Nullable message_argument) {
     switch (message_type) {
       case kIOMessageSystemWillSleep: {
-        std::cout << "kIOMessageSystemWillSleep" << std::endl;
-
         auto notification_id = reinterpret_cast<intptr_t>(message_argument);
 
         if (system_will_sleep.empty()) {
@@ -168,30 +166,22 @@ private:
           wait->wait_notice();
         }
 
-        std::cout << "kIOMessageSystemWillSleep end" << std::endl;
-
         break;
       }
 
       case kIOMessageSystemWillPowerOn:
-        std::cout << "kIOMessageSystemWillPowerOn" << std::endl;
-
         enqueue_to_dispatcher([this] {
           system_will_power_on();
         });
         break;
 
       case kIOMessageSystemHasPoweredOn:
-        std::cout << "kIOMessageSystemHasPoweredOn" << std::endl;
-
         enqueue_to_dispatcher([this] {
           system_has_powered_on();
         });
         break;
 
       case kIOMessageCanSystemSleep: {
-        std::cout << "kIOMessageCanSystemSleep" << std::endl;
-
         auto notification_id = reinterpret_cast<intptr_t>(message_argument);
 
         if (can_system_sleep.empty()) {
@@ -212,8 +202,6 @@ private:
       }
 
       case kIOMessageSystemWillNotSleep:
-        std::cout << "kIOMessageSystemWillNotSleep" << std::endl;
-
         enqueue_to_dispatcher([this] {
           system_will_not_sleep();
         });
