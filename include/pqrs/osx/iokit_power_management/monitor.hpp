@@ -2,7 +2,7 @@
 
 #include <IOKit/IOMessage.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
-#include <mutex>
+#include <atomic>
 #include <nod/nod.hpp>
 #include <pqrs/cf/run_loop_thread.hpp>
 #include <pqrs/dispatcher.hpp>
@@ -35,14 +35,21 @@ public:
 
   monitor(const monitor&) = delete;
 
-  // CFRunLoopRun may get stuck in rare cases if cf::run_loop_thread generation is repeated frequently in macOS 13.
-  // If such a condition occurs, cf::run_loop_thread detects it and calls abort to avoid it.
-  // However, to avoid the problem itself, cf::run_loop_thread should be provided externally instead of having it internally.
+  // Note 1:
+  // Creating cf::run_loop_thread instances may rarely prevent CFRunLoop processing from starting,
+  // particularly when the system is under heavy load on macOS 26.
+  // In that situation, cf::run_loop_thread terminates the process to avoid hanging indefinitely.
+  // If monitor owned its own cf::run_loop_thread, repeated monitor construction would also repeatedly expose that failure path.
+  // For that reason, cf::run_loop_thread is injected from the outside.
+  //
+  // Note 2:
+  // If `async_start` has been called, destroy `monitor` before terminating `run_loop_thread`.
   monitor(std::weak_ptr<dispatcher::dispatcher> weak_dispatcher,
           std::shared_ptr<cf::run_loop_thread> run_loop_thread)
       : dispatcher_client(weak_dispatcher),
         run_loop_thread_(run_loop_thread),
         lifetime_(std::make_shared<lifetime>()),
+        registered_(false),
         notification_port_(nullptr),
         kernel_port_(0),
         notifier_(IO_OBJECT_NULL) {
@@ -53,7 +60,15 @@ public:
 
     detach_from_dispatcher();
     lifetime_.reset();
-    stop();
+
+    if (registered_) {
+      auto wait = make_thread_wait();
+      run_loop_thread_->enqueue(^{
+        stop();
+        wait->notify();
+      });
+      wait->wait_notice();
+    }
   }
 
   void async_start(void) {
@@ -77,8 +92,6 @@ public:
 private:
   // This method is executed in run_loop_thread_.
   void start(void) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
     if (kernel_port_) {
       return;
     }
@@ -106,8 +119,9 @@ private:
 
     if (auto loop_source = IONotificationPortGetRunLoopSource(notification_port_)) {
       run_loop_thread_->add_source(loop_source);
+      registered_ = true;
     } else {
-      cleanup_registration_without_lock();
+      cleanup_registration();
 
       enqueue_to_dispatcher([this] {
         error_occurred("IONotificationPortGetRunLoopSource is failed.");
@@ -117,13 +131,11 @@ private:
   }
 
   void stop(void) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    cleanup_registration_without_lock();
+    cleanup_registration();
   }
 
-  // `mutex_` must be held by the caller.
-  void cleanup_registration_without_lock(void) {
+  // This method must be executed in run_loop_thread_.
+  void cleanup_registration(void) {
     if (notifier_) {
       iokit_return r = IODeregisterForSystemPower(&notifier_);
       if (!r) {
@@ -154,6 +166,8 @@ private:
       IONotificationPortDestroy(notification_port_);
       notification_port_ = nullptr;
     }
+
+    registered_ = false;
   }
 
   void callback(uint32_t message_type,
@@ -161,13 +175,7 @@ private:
     switch (message_type) {
       case kIOMessageSystemWillSleep: {
         auto notification_id = reinterpret_cast<intptr_t>(message_argument);
-        io_connect_t kernel_port;
-
-        {
-          std::lock_guard<std::mutex> lock(mutex_);
-
-          kernel_port = kernel_port_;
-        }
+        auto kernel_port = kernel_port_;
 
         if (system_will_sleep.empty()) {
           IOAllowPowerChange(kernel_port,
@@ -175,13 +183,16 @@ private:
         } else {
           auto wait = make_thread_wait();
 
-          enqueue_to_dispatcher([this, kernel_port, notification_id, wait] {
-            system_will_sleep(kernel_port,
-                              notification_id,
-                              wait);
-          });
-
-          wait->wait_notice();
+          if (enqueue_to_dispatcher([this, kernel_port, notification_id, wait] {
+                system_will_sleep(kernel_port,
+                                  notification_id,
+                                  wait);
+              })) {
+            wait->wait_notice();
+          } else {
+            IOAllowPowerChange(kernel_port,
+                               notification_id);
+          }
         }
 
         break;
@@ -201,13 +212,7 @@ private:
 
       case kIOMessageCanSystemSleep: {
         auto notification_id = reinterpret_cast<intptr_t>(message_argument);
-        io_connect_t kernel_port;
-
-        {
-          std::lock_guard<std::mutex> lock(mutex_);
-
-          kernel_port = kernel_port_;
-        }
+        auto kernel_port = kernel_port_;
 
         if (can_system_sleep.empty()) {
           IOAllowPowerChange(kernel_port,
@@ -215,13 +220,16 @@ private:
         } else {
           auto wait = make_thread_wait();
 
-          enqueue_to_dispatcher([this, kernel_port, notification_id, wait] {
-            can_system_sleep(kernel_port,
-                             notification_id,
-                             wait);
-          });
-
-          wait->wait_notice();
+          if (enqueue_to_dispatcher([this, kernel_port, notification_id, wait] {
+                can_system_sleep(kernel_port,
+                                 notification_id,
+                                 wait);
+              })) {
+            wait->wait_notice();
+          } else {
+            IOAllowPowerChange(kernel_port,
+                               notification_id);
+          }
         }
         break;
       }
@@ -236,7 +244,7 @@ private:
 
   std::shared_ptr<cf::run_loop_thread> run_loop_thread_;
   std::shared_ptr<lifetime> lifetime_;
-  std::mutex mutex_;
+  std::atomic<bool> registered_;
 
   IONotificationPortRef _Nullable notification_port_;
   io_connect_t kernel_port_;
