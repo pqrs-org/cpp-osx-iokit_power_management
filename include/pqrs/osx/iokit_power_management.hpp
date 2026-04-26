@@ -12,7 +12,7 @@
 
 namespace pqrs::osx::iokit_power_management {
 
-inline iokit_return sleep(void) {
+inline iokit_return sleep() {
   auto port = IOPMFindPowerManagement(MACH_PORT_NULL);
   if (port != IO_OBJECT_NULL) {
     iokit_return r = IOPMSleepSystem(port);

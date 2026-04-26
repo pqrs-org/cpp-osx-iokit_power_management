@@ -20,11 +20,11 @@ public:
 
   // wait->notify() must be called in callback.
   nod::signal<void(io_connect_t, intptr_t, std::shared_ptr<thread_wait>)> system_will_sleep;
-  nod::signal<void(void)> system_will_power_on;
-  nod::signal<void(void)> system_has_powered_on;
+  nod::signal<void()> system_will_power_on;
+  nod::signal<void()> system_has_powered_on;
   // wait->notify() must be called in callback.
   nod::signal<void(io_connect_t, intptr_t, std::shared_ptr<thread_wait>)> can_system_sleep;
-  nod::signal<void(void)> system_will_not_sleep;
+  nod::signal<void()> system_will_not_sleep;
 
   nod::signal<void(const std::string&)> error_occurred;
 
