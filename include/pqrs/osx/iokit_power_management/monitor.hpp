@@ -10,14 +10,11 @@
 #include <pqrs/osx/kern_return.hpp>
 #include <pqrs/thread_wait.hpp>
 
-namespace pqrs {
-namespace osx {
-namespace iokit_power_management {
+namespace pqrs::osx::iokit_power_management {
 
 class monitor final : dispatcher::extra::dispatcher_client {
 public:
-  class lifetime final {
-  };
+  class lifetime final {};
 
   // Signals (invoked from the dispatcher thread)
 
@@ -47,15 +44,10 @@ public:
   monitor(std::weak_ptr<dispatcher::dispatcher> weak_dispatcher,
           std::shared_ptr<cf::run_loop_thread> run_loop_thread)
       : dispatcher_client(weak_dispatcher),
-        run_loop_thread_(run_loop_thread),
-        lifetime_(std::make_shared<lifetime>()),
-        registered_(false),
-        notification_port_(nullptr),
-        kernel_port_(0),
-        notifier_(IO_OBJECT_NULL) {
+        run_loop_thread_(std::move(run_loop_thread)) {
   }
 
-  virtual ~monitor(void) {
+  ~monitor() override {
     // dispatcher_client
 
     detach_from_dispatcher();
@@ -71,7 +63,7 @@ public:
     }
   }
 
-  void async_start(void) {
+  void async_start() {
     auto weak_lifetime = std::weak_ptr<lifetime>(lifetime_);
     run_loop_thread_->enqueue(^{
       if (weak_lifetime.lock()) {
@@ -80,7 +72,7 @@ public:
     });
   }
 
-  void async_stop(void) {
+  void async_stop() {
     auto weak_lifetime = std::weak_ptr<lifetime>(lifetime_);
     run_loop_thread_->enqueue(^{
       if (weak_lifetime.lock()) {
@@ -91,7 +83,7 @@ public:
 
 private:
   // This method is executed in run_loop_thread_.
-  void start(void) {
+  void start() {
     if (kernel_port_) {
       return;
     }
@@ -130,12 +122,12 @@ private:
     }
   }
 
-  void stop(void) {
+  void stop() {
     cleanup_registration();
   }
 
   // This method must be executed in run_loop_thread_.
-  void cleanup_registration(void) {
+  void cleanup_registration() {
     if (notifier_) {
       iokit_return r = IODeregisterForSystemPower(&notifier_);
       if (!r) {
@@ -243,14 +235,12 @@ private:
   }
 
   std::shared_ptr<cf::run_loop_thread> run_loop_thread_;
-  std::shared_ptr<lifetime> lifetime_;
-  std::atomic<bool> registered_;
+  std::shared_ptr<lifetime> lifetime_ = std::make_shared<lifetime>();
+  std::atomic<bool> registered_ = false;
 
-  IONotificationPortRef _Nullable notification_port_;
-  io_connect_t kernel_port_;
-  io_object_t notifier_;
+  IONotificationPortRef _Nullable notification_port_ = nullptr;
+  io_connect_t kernel_port_ = 0;
+  io_object_t notifier_ = IO_OBJECT_NULL;
 };
 
-} // namespace iokit_power_management
-} // namespace osx
-} // namespace pqrs
+} // namespace pqrs::osx::iokit_power_management

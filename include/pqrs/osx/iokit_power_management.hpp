@@ -10,9 +10,7 @@
 
 #include "iokit_power_management/monitor.hpp"
 
-namespace pqrs {
-namespace osx {
-namespace iokit_power_management {
+namespace pqrs::osx::iokit_power_management {
 
 inline iokit_return sleep(void) {
   auto port = IOPMFindPowerManagement(MACH_PORT_NULL);
@@ -26,6 +24,4 @@ inline iokit_return sleep(void) {
   return kIOReturnError;
 }
 
-} // namespace iokit_power_management
-} // namespace osx
-} // namespace pqrs
+} // namespace pqrs::osx::iokit_power_management
