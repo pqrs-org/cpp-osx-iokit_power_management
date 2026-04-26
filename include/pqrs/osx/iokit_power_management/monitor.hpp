@@ -2,6 +2,7 @@
 
 #include <IOKit/IOMessage.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
+#include <mutex>
 #include <nod/nod.hpp>
 #include <pqrs/cf/run_loop_thread.hpp>
 #include <pqrs/dispatcher.hpp>
@@ -15,6 +16,9 @@ namespace iokit_power_management {
 
 class monitor final : dispatcher::extra::dispatcher_client {
 public:
+  class lifetime final {
+  };
+
   // Signals (invoked from the dispatcher thread)
 
   // wait->notify() must be called in callback.
@@ -38,6 +42,7 @@ public:
           std::shared_ptr<cf::run_loop_thread> run_loop_thread)
       : dispatcher_client(weak_dispatcher),
         run_loop_thread_(run_loop_thread),
+        lifetime_(std::make_shared<lifetime>()),
         notification_port_(nullptr),
         kernel_port_(0),
         notifier_(IO_OBJECT_NULL) {
@@ -47,72 +52,78 @@ public:
     // dispatcher_client
 
     detach_from_dispatcher();
-
-    // run_loop_thread
-
-    run_loop_thread_->enqueue(^{
-      stop();
-    });
-
-    // Wait until all tasks are processed
-
-    auto wait = make_thread_wait();
-    run_loop_thread_->enqueue(^{
-      wait->notify();
-    });
-    wait->wait_notice();
+    lifetime_.reset();
+    stop();
   }
 
   void async_start(void) {
+    auto weak_lifetime = std::weak_ptr<lifetime>(lifetime_);
     run_loop_thread_->enqueue(^{
-      start();
+      if (weak_lifetime.lock()) {
+        start();
+      }
     });
   }
 
   void async_stop(void) {
+    auto weak_lifetime = std::weak_ptr<lifetime>(lifetime_);
     run_loop_thread_->enqueue(^{
-      stop();
+      if (weak_lifetime.lock()) {
+        stop();
+      }
     });
   }
 
 private:
   // This method is executed in run_loop_thread_.
   void start(void) {
-    if (!kernel_port_) {
-      kernel_port_ = IORegisterForSystemPower(
-          reinterpret_cast<void*>(this),
-          &notification_port_,
-          [](void* refcon,
-             io_service_t service,
-             uint32_t message_type,
-             void* message_argument) {
-            auto self = reinterpret_cast<monitor*>(refcon);
-            if (self) {
-              self->callback(message_type,
-                             message_argument);
-            }
-          },
-          &notifier_);
-      if (!kernel_port_) {
-        enqueue_to_dispatcher([this] {
-          error_occurred("IORegisterForSystemPower is failed.");
-        });
-        return;
-      }
+    std::lock_guard<std::mutex> lock(mutex_);
 
-      if (auto loop_source = IONotificationPortGetRunLoopSource(notification_port_)) {
-        run_loop_thread_->add_source(loop_source);
-      } else {
-        enqueue_to_dispatcher([this] {
-          error_occurred("IONotificationPortGetRunLoopSource is failed.");
-        });
-        return;
-      }
+    if (kernel_port_) {
+      return;
+    }
+
+    kernel_port_ = IORegisterForSystemPower(
+        reinterpret_cast<void*>(this),
+        &notification_port_,
+        [](void* refcon,
+           io_service_t service,
+           uint32_t message_type,
+           void* message_argument) {
+          auto self = reinterpret_cast<monitor*>(refcon);
+          if (self) {
+            self->callback(message_type,
+                           message_argument);
+          }
+        },
+        &notifier_);
+    if (!kernel_port_) {
+      enqueue_to_dispatcher([this] {
+        error_occurred("IORegisterForSystemPower is failed.");
+      });
+      return;
+    }
+
+    if (auto loop_source = IONotificationPortGetRunLoopSource(notification_port_)) {
+      run_loop_thread_->add_source(loop_source);
+    } else {
+      cleanup_registration_without_lock();
+
+      enqueue_to_dispatcher([this] {
+        error_occurred("IONotificationPortGetRunLoopSource is failed.");
+      });
+      return;
     }
   }
 
-  // This method is executed in run_loop_thread_.
   void stop(void) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    cleanup_registration_without_lock();
+  }
+
+  // `mutex_` must be held by the caller.
+  void cleanup_registration_without_lock(void) {
     if (notifier_) {
       iokit_return r = IODeregisterForSystemPower(&notifier_);
       if (!r) {
@@ -150,15 +161,22 @@ private:
     switch (message_type) {
       case kIOMessageSystemWillSleep: {
         auto notification_id = reinterpret_cast<intptr_t>(message_argument);
+        io_connect_t kernel_port;
+
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+
+          kernel_port = kernel_port_;
+        }
 
         if (system_will_sleep.empty()) {
-          IOAllowPowerChange(kernel_port_,
+          IOAllowPowerChange(kernel_port,
                              notification_id);
         } else {
           auto wait = make_thread_wait();
 
-          enqueue_to_dispatcher([this, notification_id, wait] {
-            system_will_sleep(kernel_port_,
+          enqueue_to_dispatcher([this, kernel_port, notification_id, wait] {
+            system_will_sleep(kernel_port,
                               notification_id,
                               wait);
           });
@@ -183,15 +201,22 @@ private:
 
       case kIOMessageCanSystemSleep: {
         auto notification_id = reinterpret_cast<intptr_t>(message_argument);
+        io_connect_t kernel_port;
+
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+
+          kernel_port = kernel_port_;
+        }
 
         if (can_system_sleep.empty()) {
-          IOAllowPowerChange(kernel_port_,
+          IOAllowPowerChange(kernel_port,
                              notification_id);
         } else {
           auto wait = make_thread_wait();
 
-          enqueue_to_dispatcher([this, notification_id, wait] {
-            can_system_sleep(kernel_port_,
+          enqueue_to_dispatcher([this, kernel_port, notification_id, wait] {
+            can_system_sleep(kernel_port,
                              notification_id,
                              wait);
           });
@@ -210,6 +235,8 @@ private:
   }
 
   std::shared_ptr<cf::run_loop_thread> run_loop_thread_;
+  std::shared_ptr<lifetime> lifetime_;
+  std::mutex mutex_;
 
   IONotificationPortRef _Nullable notification_port_;
   io_connect_t kernel_port_;
