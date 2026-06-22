@@ -19,7 +19,7 @@ public:
   class lifetime final {};
 
   // Signals (invoked from the dispatcher thread)
-  // Important: Connect or disconnect these signals before async_start, or from the dispatcher thread.
+  // Important: Connect or disconnect these signals before async_start.
 
   // wait->notify() must be called in callback.
   nod::signal<void(io_connect_t, intptr_t, not_null_shared_ptr_t<thread_wait>)> system_will_sleep;
