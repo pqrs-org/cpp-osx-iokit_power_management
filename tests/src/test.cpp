@@ -78,5 +78,23 @@ int main() {
     dispatcher = nullptr;
   };
 
+  "iokit_power_management::monitor can be destroyed after queued async operations"_test = [] {
+    auto [time_source, dispatcher, run_loop_thread] = make_components();
+
+    auto monitor = std::make_unique<pqrs::osx::iokit_power_management::monitor>(dispatcher,
+                                                                                run_loop_thread);
+
+    monitor->async_start();
+    monitor->async_stop();
+    monitor->async_start();
+    monitor = nullptr;
+
+    run_loop_thread->terminate();
+    run_loop_thread = nullptr;
+
+    dispatcher->terminate();
+    dispatcher = nullptr;
+  };
+
   return 0;
 }
