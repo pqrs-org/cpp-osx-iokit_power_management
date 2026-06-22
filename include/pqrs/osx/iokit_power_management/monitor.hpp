@@ -59,35 +59,43 @@ public:
     // `registered_` covers cleanup after start() has finished.
     // `run_loop_tasks_` covers queued or running start()/stop() before registration state is updated.
     if (registered_ ||
-        run_loop_tasks_ > 0) {
-      not_null_shared_ptr_t<thread_wait> wait = make_thread_wait();
-      run_loop_thread_->enqueue(^{
+        *run_loop_tasks_ > 0) {
+      if (CFRunLoopGetCurrent() == run_loop_thread_->get_run_loop()) {
         stop();
-        wait->notify();
-      });
-      wait->wait_notice();
+      } else {
+        not_null_shared_ptr_t<thread_wait> wait = make_thread_wait();
+        run_loop_thread_->enqueue(^{
+          stop();
+          wait->notify();
+        });
+        wait->wait_notice();
+      }
     }
   }
 
   void async_start() {
-    ++run_loop_tasks_;
+    auto run_loop_tasks = run_loop_tasks_;
+    ++(*run_loop_tasks);
+
     auto weak_lifetime = std::weak_ptr<lifetime>(lifetime_);
     run_loop_thread_->enqueue(^{
       if (weak_lifetime.lock()) {
         start();
       }
-      --run_loop_tasks_;
+      --(*run_loop_tasks);
     });
   }
 
   void async_stop() {
-    ++run_loop_tasks_;
+    auto run_loop_tasks = run_loop_tasks_;
+    ++(*run_loop_tasks);
+
     auto weak_lifetime = std::weak_ptr<lifetime>(lifetime_);
     run_loop_thread_->enqueue(^{
       if (weak_lifetime.lock()) {
         stop();
       }
-      --run_loop_tasks_;
+      --(*run_loop_tasks);
     });
   }
 
@@ -246,7 +254,7 @@ private:
 
   not_null_shared_ptr_t<cf::run_loop_thread> run_loop_thread_;
   std::shared_ptr<lifetime> lifetime_ = std::make_shared<lifetime>();
-  std::atomic<std::size_t> run_loop_tasks_ = 0;
+  not_null_shared_ptr_t<std::atomic<std::size_t>> run_loop_tasks_ = std::make_shared<std::atomic<std::size_t>>(0);
   std::atomic<bool> registered_ = false;
 
   IONotificationPortRef _Nullable notification_port_ = nullptr;

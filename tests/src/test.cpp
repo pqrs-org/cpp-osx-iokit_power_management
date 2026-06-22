@@ -96,5 +96,28 @@ int main() {
     dispatcher = nullptr;
   };
 
+  "iokit_power_management::monitor can be destroyed from run_loop_thread"_test = [] {
+    auto [time_source, dispatcher, run_loop_thread] = make_components();
+
+    auto monitor = std::make_shared<std::shared_ptr<pqrs::osx::iokit_power_management::monitor>>(
+        std::make_shared<pqrs::osx::iokit_power_management::monitor>(dispatcher,
+                                                                     run_loop_thread));
+
+    (*monitor)->async_start();
+
+    auto wait = pqrs::make_thread_wait();
+    run_loop_thread->enqueue(^{
+      *monitor = nullptr;
+      wait->notify();
+    });
+    wait->wait_notice();
+
+    run_loop_thread->terminate();
+    run_loop_thread = nullptr;
+
+    dispatcher->terminate();
+    dispatcher = nullptr;
+  };
+
   return 0;
 }
