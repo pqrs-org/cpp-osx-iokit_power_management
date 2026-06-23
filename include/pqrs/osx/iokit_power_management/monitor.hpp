@@ -3,7 +3,9 @@
 #include <IOKit/IOMessage.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
+#include <memory>
 #include <nod/nod.hpp>
 #include <pqrs/cf/run_loop_thread.hpp>
 #include <pqrs/dispatcher.hpp>
@@ -17,6 +19,8 @@ namespace pqrs::osx::iokit_power_management {
 class monitor final : dispatcher::extra::dispatcher_client {
 public:
   class lifetime final {};
+
+  static constexpr auto sleep_prevention_wait_timeout = std::chrono::seconds(30);
 
   // Signals (invoked from the dispatcher thread)
   // Important: Connect or disconnect these signals before async_start.
@@ -198,7 +202,8 @@ private:
                                   notification_id,
                                   wait);
               })) {
-            wait->wait_notice();
+            // Stop blocking the IOKit power callback after the expected response window.
+            wait->wait_notice_for(sleep_prevention_wait_timeout);
           } else {
             IOAllowPowerChange(kernel_port,
                                notification_id);
@@ -235,7 +240,8 @@ private:
                                  notification_id,
                                  wait);
               })) {
-            wait->wait_notice();
+            // Stop blocking the IOKit power callback after the expected response window.
+            wait->wait_notice_for(sleep_prevention_wait_timeout);
           } else {
             IOAllowPowerChange(kernel_port,
                                notification_id);
