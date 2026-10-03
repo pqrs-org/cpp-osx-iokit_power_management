@@ -42,8 +42,7 @@ public:
       })
       : kernel_port_(kernel_port),                          // Keep initializer list vertical.
         notification_id_(notification_id),                  // Keep initializer list vertical.
-        allow_power_change_(std::move(allow_power_change)), // Keep initializer list vertical.
-        wait_(make_thread_wait()) {
+        allow_power_change_(std::move(allow_power_change)) {
   }
 
   [[nodiscard]] not_null_shared_ptr_t<thread_wait> get_wait() const {
@@ -90,8 +89,8 @@ private:
   io_connect_t kernel_port_;
   intptr_t notification_id_;
   allow_power_change_function allow_power_change_;
-  not_null_shared_ptr_t<thread_wait> wait_;
 
+  not_null_shared_ptr_t<thread_wait> wait_{make_thread_wait()};
   std::mutex mutex_;
   bool callback_started_{false};
   bool closed_{false};
@@ -375,15 +374,16 @@ private:
   }
 
   not_null_shared_ptr_t<cf::run_loop_thread> run_loop_thread_;
-  std::shared_ptr<lifetime> lifetime_ = std::make_shared<lifetime>();
-  not_null_shared_ptr_t<std::atomic<std::size_t>> run_loop_tasks_ = std::make_shared<std::atomic<std::size_t>>(0);
+
+  std::shared_ptr<lifetime> lifetime_{std::make_shared<lifetime>()};
+  not_null_shared_ptr_t<std::atomic<std::size_t>> run_loop_tasks_{std::make_shared<std::atomic<std::size_t>>(0)};
   std::atomic<bool> registered_{false};
   std::mutex pending_power_responses_mutex_;
   std::unordered_set<pending_power_response_ptr> pending_power_responses_;
 
-  IONotificationPortRef _Nullable notification_port_ = nullptr;
+  IONotificationPortRef _Nullable notification_port_{nullptr};
   io_connect_t kernel_port_{0};
-  io_object_t notifier_ = IO_OBJECT_NULL;
+  io_object_t notifier_{IO_OBJECT_NULL};
 };
 
 } // namespace pqrs::osx::iokit_power_management
