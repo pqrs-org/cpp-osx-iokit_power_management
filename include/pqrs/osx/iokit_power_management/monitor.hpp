@@ -382,7 +382,7 @@ private:
   std::unordered_set<pending_power_response_ptr> pending_power_responses_;
 
   IONotificationPortRef _Nullable notification_port_ = nullptr;
-  io_connect_t kernel_port_ = 0;
+  io_connect_t kernel_port_{0};
   io_object_t notifier_ = IO_OBJECT_NULL;
 };
 
