@@ -93,8 +93,8 @@ private:
   not_null_shared_ptr_t<thread_wait> wait_;
 
   std::mutex mutex_;
-  bool callback_started_ = false;
-  bool closed_ = false;
+  bool callback_started_{false};
+  bool closed_{false};
 };
 } // namespace detail
 
@@ -377,7 +377,7 @@ private:
   not_null_shared_ptr_t<cf::run_loop_thread> run_loop_thread_;
   std::shared_ptr<lifetime> lifetime_ = std::make_shared<lifetime>();
   not_null_shared_ptr_t<std::atomic<std::size_t>> run_loop_tasks_ = std::make_shared<std::atomic<std::size_t>>(0);
-  std::atomic<bool> registered_ = false;
+  std::atomic<bool> registered_{false};
   std::mutex pending_power_responses_mutex_;
   std::unordered_set<pending_power_response_ptr> pending_power_responses_;
 
